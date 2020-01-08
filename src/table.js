@@ -1,6 +1,7 @@
 'use strict'
 
 const _ = require('lodash')
+const Metrics = require('@mojaloop/central-services-metrics')
 
 class Table {
   constructor (name, knex) {
@@ -10,39 +11,76 @@ class Table {
   }
 
   insert (fields) {
+    const histTimerEnd = Metrics.getHistogram(
+      'cl_database_insert',
+      'Database Insert',
+      ['success']
+    ).startTimer()
     return this._createBuilder().insert(fields, '*').then(inserted => {
       if (inserted.length === 0) {
+        histTimerEnd({ success: false })
         throw new Error(`There was an error inserting the record to ${this._tableName}`)
       }
+      histTimerEnd({ success: true })
       return inserted[0]
     })
   }
 
   update (criteria, fields) {
+    const histTimerEnd = Metrics.getHistogram(
+      'cl_database_update',
+      'Database Update',
+      ['success']
+    ).startTimer()
     const builder = this._createBuilder()
     return this._addWhere(criteria, builder).update(fields, '*').then(updated => {
-      if (updated.length === 0) return null
+      if (updated.length === 0) {
+        histTimerEnd({ success: true })
+        return null
+      }
+      histTimerEnd({ success: true })
       return updated.length === 1 ? updated[0] : updated
     })
   }
 
   find (criteria, options) {
+    const histTimerEnd = Metrics.getHistogram(
+      'cl_database_find',
+      'Database Find',
+      ['success']
+    ).startTimer()
     let builder = this._createBuilder()
     builder = this._addWhere(criteria, builder)
     builder = this._addOptions(options, builder)
+    histTimerEnd({ success: true })
     return builder.then(results => results)
   }
 
   findOne (criteria, options) {
+    const histTimerEnd = Metrics.getHistogram(
+      'cl_database_findOne',
+      'Database FindOne',
+      ['success']
+    ).startTimer()
     return this.find(criteria, options).then(results => {
+      histTimerEnd({ success: true })
       return results.length > 0 ? results[0] : null
     })
   }
 
   destroy (criteria) {
+    const histTimerEnd = Metrics.getHistogram(
+      'cl_database_destroy',
+      'Database Destroy',
+      ['success']
+    ).startTimer()
     const builder = this._createBuilder()
     return this._addWhere(criteria, builder).del('*').then(deleted => {
-      if (deleted.length === 0) return null
+      if (deleted.length === 0) {
+        histTimerEnd({ success: true })
+        return null
+      }
+      histTimerEnd({ success: true })
       return deleted.length === 1 ? deleted[0] : deleted
     })
   }
