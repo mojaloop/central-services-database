@@ -5,6 +5,7 @@ const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
 const Proxyquire = require('proxyquire')
 const lodash = require('lodash')
+const ActualDatabase = require('../../src/database')
 
 Test('database', databaseTest => {
   let sandbox
@@ -311,6 +312,38 @@ Test('database', databaseTest => {
     })
 
     fromTest.end()
+  })
+
+  databaseTest.test('instrument should', instrumentTest => {
+    instrumentTest.test('wrap query and log sql calls into the internal buffer', async test => {
+      const instrumentConfig = {
+        client: 'sqlite3',
+        connection: {
+          filename: ':memory:',
+          supportBigNumbers: true
+        },
+        useNullAsDefault: true,
+        debug: false,
+        instrument: true
+      }
+
+      const instrumentedDbInstance = new ActualDatabase()
+      const originalNow = Date.now
+      Date.now = () => 1589207691139
+
+      await instrumentedDbInstance.connect(instrumentConfig).then(async () => {
+        const buffer = instrumentedDbInstance.getInstrumentationBuffer()
+        test.equal(buffer.length, 1)
+        test.equal(buffer[0].start, 1589207691139)
+        test.equal(buffer[0].end, 1589207691139)
+        test.equal(buffer[0].label, '"select * from `sqlite_master` where `type` = ?"')
+        Date.now = originalNow
+        instrumentedDbInstance.disconnect()
+        test.end()
+      })     
+    })
+
+    instrumentTest.end()
   })
 
   databaseTest.end()

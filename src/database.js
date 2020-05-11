@@ -1,6 +1,7 @@
 'use strict'
 
 const Knex = require('knex')
+const { instrumentKnex } = require('./instrumentation/knex')
 const Table = require('./table')
 const Utils = require('./utils.js')
 
@@ -20,7 +21,8 @@ const defaultConfig = {
     reapIntervalMillis: 1000,
     createRetryIntervalMillis: 200
   },
-  debug: false
+  debug: false,
+  instrument: false
 }
 
 class Database {
@@ -28,6 +30,7 @@ class Database {
     this._knex = null
     this._tables = []
     this._schema = null
+    this.buffer = []
 
     this._listTableQueries = {
       mysql: (knex) => {
@@ -35,6 +38,9 @@ class Database {
       },
       pg: (knex) => {
         return knex('pg_catalog.pg_tables').where({ schemaname: 'public' }).select('tablename').then(rows => rows.map(r => r.tablename))
+      },
+      sqlite3: (knex) => {
+        return knex('sqlite_master').where('type', 'table').select('*').then(rows => rows.map(r => r.TABLE_NAME))
       }
     }
   }
@@ -44,6 +50,14 @@ class Database {
       throw new Error('The database must be connected to get the database object')
     }
     return this._knex
+  }
+
+  getInstrumentationBuffer () {
+    return this.buffer
+  }
+
+  clearInstrumentationBuffer () {
+    this.buffer = []
   }
 
   /**
@@ -68,12 +82,12 @@ class Database {
       config = Utils.buildDefaultConfig(defaultConfig, config)
     }
 
-    if (!config || !config.connection || !config.connection.database) {
+    if (!config || !config.connection || !(config.connection.database || config.connection.filename)) {
       throw new Error('Invalid database schema in database config')
     }
 
     this._schema = config.connection.database
-    this._knex = await configureKnex(config)
+    this._knex = await configureKnex(config, this.buffer)
     this._tables = await this._listTables()
     await this._setTableProperties()
   }
@@ -119,8 +133,8 @@ class Database {
   }
 }
 
-const configureKnex = async (config) => {
-  return Knex(config)
+const configureKnex = async (config, buffer = []) => {
+  return instrumentKnex(Knex(config), { logger: console, buffer: buffer, enabled: config.instrument })
 }
 
 module.exports = Database
